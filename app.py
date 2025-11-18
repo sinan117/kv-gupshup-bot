@@ -6,28 +6,26 @@ app = Flask(__name__)
 user_context = {}
 
 @app.route("/whatsapp", methods=["POST"])
-def reply_whatsapp():
+def gupshup_webhook():
     data = request.json
+    print("📩 Incoming:", data)
 
-    # Gupshup incoming format
-    incoming_msg = data.get("payload", {}).get("payload", {}).get("text", "").strip()
-    sender = data.get("payload", {}).get("sender", {}).get("phone", "")
-
-    print(f"📩 {sender}: {incoming_msg}")
-
+    # Extract incoming message details (Gupshup format)
+    sender = data.get("sender", {}).get("phone", "")
+    incoming_msg = data.get("message", {}).get("text", "")
+    incoming_msg = incoming_msg.strip()
     lower_msg = incoming_msg.lower()
 
-    # Function to extract class numbers
+    reply = None
+    image_url = None
+
     def extract_class_number(text):
         matches = re.findall(r"\d+", text)
         if matches:
             return int(matches[0])
         return None
 
-    reply = None
-    image_url = None
-
-    # Step 4: Ask phone
+    # Step 4: Admission - Ask phone number
     if sender in user_context and user_context[sender]["step"] == "ask_phone":
         if not re.fullmatch(r"\d{10}", incoming_msg):
             reply = "⚠️ Please enter a valid *10-digit phone number* (digits only)."
@@ -45,7 +43,7 @@ def reply_whatsapp():
             )
             user_context.pop(sender)
 
-    # Step 3: Name
+    # Step 3: Ask name
     elif sender in user_context and user_context[sender]["step"] == "ask_name":
         if not re.fullmatch(r"[A-Za-z ]+", incoming_msg):
             reply = "⚠️ Please enter your name using *alphabets only* (e.g., John Doe)."
@@ -54,7 +52,7 @@ def reply_whatsapp():
             user_context[sender]["step"] = "ask_phone"
             reply = "📞 Please provide your *contact number* (10 digits)."
 
-    # Step 2: Class
+    # Step 2: Ask class
     elif sender in user_context and user_context[sender]["step"] == "ask_class":
         if not re.fullmatch(r"\d{1,2}", incoming_msg) or not (1 <= int(incoming_msg) <= 12):
             reply = "⚠️ Please enter your class as a number between *1 and 12* (e.g., 5)."
@@ -63,12 +61,12 @@ def reply_whatsapp():
             user_context[sender]["step"] = "ask_name"
             reply = "👤 Great! Please tell me the *student's full name*."
 
-    # Step 1: Admission start
+    # Start: Admission
     elif "admission" in lower_msg or lower_msg == "1":
         reply = "📚 Admissions for 2025 are open!\nPlease tell me which *class* you are seeking admission for?"
         user_context[sender] = {"step": "ask_class"}
 
-    # Welcome menu
+    # Start Menu (Hi/Hello)
     elif "hi" in lower_msg or "hello" in lower_msg:
         reply = (
             "👋 Hello! Welcome to *KV Idukki School*.\n\n"
@@ -80,12 +78,12 @@ def reply_whatsapp():
         )
         image_url = "https://raw.githubusercontent.com/sinan117/kv-whatsapp-bot/main/welcome.jpg"
 
-    # Fee: Step 1
+    # Fee - Step 1
     elif "fee" in lower_msg or lower_msg == "2":
         reply = "💰 Please enter the *class number* (e.g., 1, 5, 10) to get the fee details."
         user_context[sender] = {"step": "ask_fee_class"}
 
-    # Fee: Step 2
+    # Fee - Step 2
     elif sender in user_context and user_context[sender].get("step") == "ask_fee_class":
         cls = extract_class_number(incoming_msg)
         if cls and 1 <= cls <= 12:
@@ -101,7 +99,7 @@ def reply_whatsapp():
         else:
             reply = "⚠️ Please enter a valid class number between 1 and 12."
 
-    # Fee: Step 3
+    # Fee - Step 3
     elif sender in user_context and user_context[sender].get("step") == "ask_fee_category":
         cls = user_context[sender]["class"]
 
@@ -115,14 +113,14 @@ def reply_whatsapp():
         if "1" in lower_msg or "general" in lower_msg:
             category = "General"
             fee = fees["general"]
-        elif "2" in lower_msg or "sc" in lower_msg or "st" in lower_msg or "obc" in lower_msg:
+        elif "2" in lower_msg:
             category = "SC/ST/OBC"
             fee = fees["sc/st/obc"]
-        elif "3" in lower_msg or "girl" in lower_msg:
+        elif "3" in lower_msg:
             category = "Single Girl Child"
             fee = fees["single girl child"]
         else:
-            return jsonify({"message": {"text": "⚠️ Please type 1, 2, or 3."}})
+            return jsonify({})
 
         reply = f"🏫 Fee for *Class {cls}* ({category} category) is *₹{fee}* per term."
         user_context.pop(sender)
@@ -141,18 +139,16 @@ def reply_whatsapp():
             "1️⃣ Admission  2️⃣ Fees  3️⃣ Contact"
         )
 
-    # GUPSHUP RESPONSE FORMAT
+    # Build Gupshup reply format
     response = {
-        "message": {
-            "text": reply
-        }
+        "type": "message",
+        "message": {"text": reply}
     }
 
     if image_url:
-        response["message"]["attachments"] = [{
-            "type": "image",
-            "url": image_url
-        }]
+        response["message"]["attachments"] = [
+            {"type": "image", "url": image_url}
+        ]
 
     return jsonify(response)
 
